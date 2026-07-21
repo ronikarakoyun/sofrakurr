@@ -1,26 +1,105 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* SofraKur tasarım sistemi — BUTİKEK sıcak krem/kahve paleti (Claude Design'dan) */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --font-sans: var(--font-figtree), sans-serif;
+  --font-serif: var(--font-lora), serif;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Aydınlık yüzeyler (QR, Kasa, Admin) */
+  --color-krem: #faf6f1;
+  --color-krem-koyu: #f4ece1;
+  --color-kart: #ffffff;
+  --color-cizgi: #f0e5d6;
+  --color-cizgi-koyu: #e7d9c5;
+  --color-metin: #2b1c10;
+  --color-metin-baslik: #5b3a1d;
+  --color-metin-orta: #6d5b49;
+  --color-metin-soluk: #93806f;
+  --color-metin-silik: #b5a794;
+
+  /* Marka */
+  --color-marka: #c86f2c;
+  --color-marka-koyu: #8a4b1f;
+
+  /* Durum renkleri */
+  --color-basari: #2f7a4c;
+  --color-basari-zemin: #e6f3ea;
+  --color-uyari: #9a5b13;
+  --color-uyari-zemin: #fbeeda;
+  --color-tehlike: #a63b2a;
+  --color-tehlike-yumusak: #b3543a;
+  --color-tehlike-zemin: #fbe7e4;
+
+  /* KDS koyu tema */
+  --color-kds-zemin: #1c1410;
+  --color-kds-bar: #241a13;
+  --color-kds-kart: #2a2018;
+  --color-kds-cizgi: #3a2c1f;
+  --color-kds-metin: #f3ece2;
+  --color-kds-soluk: #b3a18c;
+  --color-kds-silik: #7a6a56;
+  --color-kds-rozet: #332619;
+  --color-kds-acil-zemin: #4a1f14;
+  --color-kds-acil: #f0876a;
+  --color-kds-kirmizi-kutu: #3a2119;
+  --color-kds-not-metin: #e8b98a;
+
+  /* KDS durum renkleri */
+  --color-durum-bekliyor: #5b8dd6;
+  --color-durum-hazirlaniyor: #e08a3c;
+  --color-durum-hazir: #4caf7d;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-krem);
+  color: var(--color-metin);
+  font-family: var(--font-figtree), sans-serif;
 }
+
+.marka-gradyan {
+  background: linear-gradient(135deg, #c86f2c, #8a4b1f);
+}
+
+@keyframes sheetUp {
+  from { transform: translateY(48px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes kartGir {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes hazirNabiz {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(76, 175, 125, 0.35); }
+  50% { box-shadow: 0 0 0 7px rgba(76, 175, 125, 0); }
+}
+
+@keyframes kaydirCik {
+  to { transform: translateX(-110%); opacity: 0; }
+}
+
+.anim-kart { animation: kartGir 0.25s ease; }
+.anim-sheet { animation: sheetUp 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.anim-fade { animation: fadeIn 0.2s ease; }
+.anim-nabiz { animation: kartGir 0.25s ease, hazirNabiz 2s ease-in-out infinite; }
+/* Sola kaydırma tamamlanınca kart ekrandan çıkar */
+.anim-kaydir-cik { animation: kaydirCik 0.2s ease-in forwards; }
+
+/* Hareket azaltma tercihi: animasyonlar anında biter, akış bozulmaz */
+@media (prefers-reduced-motion: reduce) {
+  .anim-kart,
+  .anim-sheet,
+  .anim-fade,
+  .anim-nabiz,
+  .anim-kaydir-cik {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}
+
+/* Kaydırma çubuğunu gizle (çip şeridi, sheet) */
+.kaydirmasiz { scrollbar-width: none; }
+.kaydirmasiz::-webkit-scrollbar { display: none; }

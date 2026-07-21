@@ -1,0 +1,15 @@
+{
+  "id": "/kasa",
+  "name": "SofraKur Kasa",
+  "short_name": "Kasa",
+  "description": "Açık masalar, ödeme, gün sonu ve geçmiş hesaplar",
+  "start_url": "/kasa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#faf6f1",
+  "theme_color": "#8a4b1f",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
