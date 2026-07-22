@@ -25,8 +25,6 @@ interface Ozet {
   iptal_tutar: number;
   ikram_tutar: number;
   iskonto_tutar: number;
-  cariye_yazilan: number;
-  cari_tahsilat: number;
 }
 
 interface UrunSatir {
@@ -226,12 +224,6 @@ export default function RaporlarPage() {
               : []),
             ...(Number(ozet.iskonto_tutar) > 0
               ? [{ etiket: "İskonto", deger: tl(Number(ozet.iskonto_tutar)) }]
-              : []),
-            ...(Number(ozet.cariye_yazilan) > 0
-              ? [{ etiket: "Cariye yazılan", deger: tl(Number(ozet.cariye_yazilan)) }]
-              : []),
-            ...(Number(ozet.cari_tahsilat) > 0
-              ? [{ etiket: "Cari tahsilat", deger: tl(Number(ozet.cari_tahsilat)) }]
               : []),
           ].map((k) => (
             <div key={k.etiket} className="rounded-2xl border border-cizgi bg-kart px-4 py-3.5">

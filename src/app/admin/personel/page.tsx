@@ -16,11 +16,8 @@ interface Personel {
 // Kasa hesabı yetki anahtarları (kapatılan alan kasada görünmez + sunucuda engellenir)
 const YETKILER: { kod: string; ad: string }[] = [
   { kod: "siparis", ad: "Sipariş girme" },
-  { kod: "iskonto", ad: "İskonto" },
-  { kod: "ikram", ad: "İkram" },
   { kod: "gunsonu", ad: "Gün sonu + gider" },
   { kod: "tedarikci", ad: "Tedarikçi belgeleri" },
-  { kod: "cari", ad: "Cari hesaplar" },
   { kod: "gecmis", ad: "Geçmiş hesaplar" },
   { kod: "odul", ad: "Ödül kullanma" },
 ];

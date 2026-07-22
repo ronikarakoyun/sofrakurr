@@ -27,6 +27,7 @@ interface KalemRow {
   opsiyon_ek_fiyat: number;
   secilen_opsiyonlar: { secim: string }[];
   reddedildi: boolean;
+  odul_karsiligi?: boolean; // ödül karşılığı bedava (ciro dışı)
   kalem_notu?: string | null;
 }
 
@@ -149,6 +150,13 @@ export function SiparisGirisi({
   const [gonderiliyor, setGonderiliyor] = useState(false);
   const [saat, setSaat] = useState("");
   const [bildirimDurum, setBildirimDurum] = useState<"yok" | "acik" | "kapali">("yok");
+  // Masa panelinde puan/ödül işleme (hesap kapatmadan önce)
+  const [musteriKod, setMusteriKod] = useState("");
+  const [puanBilgi, setPuanBilgi] = useState<string | null>(null);
+  const [oduller, setOduller] = useState<{ id: string; ad: string; puan_bedeli: number }[] | null>(null);
+  const [odulListeAcik, setOdulListeAcik] = useState(false);
+  // Ödül seçilince o ödülün uygulanacağı kalem beklenir (kalemler tıklanabilir olur)
+  const [odulSecili, setOdulSecili] = useState<{ id: string; ad: string } | null>(null);
   const dikkatSayisi = useRef(0);
   const klavye = useKlavyeYuksekligi();
 
@@ -167,7 +175,7 @@ export function SiparisGirisi({
       supabase.from("masa").select("id, ad, bolum_id, aktif").eq("cafe_id", kullanici.cafe_id).eq("aktif", true).order("ad"),
       supabase
         .from("adisyon")
-        .select("id, masa_id, siparis(id, durum, masa_id, siparis_no, siparis_kalemi(id, urun_ad, birim_fiyat, adet, opsiyon_ek_fiyat, secilen_opsiyonlar, reddedildi, kalem_notu))")
+        .select("id, masa_id, siparis(id, durum, masa_id, siparis_no, siparis_kalemi(id, urun_ad, birim_fiyat, adet, opsiyon_ek_fiyat, secilen_opsiyonlar, reddedildi, odul_karsiligi, kalem_notu))")
         .eq("durum", "acik"),
       supabase.from("garson_cagri").select("id, masa_id, tur").eq("acik", true),
       // hazır bildirimi adisyon kapansa bile düşmesin diye siparişler ayrıca izlenir
@@ -328,7 +336,11 @@ export function SiparisGirisi({
     const cagri = cagrilar.find((c) => c.masa_id === masaId && c.tur === "garson");
     const hesap = cagrilar.find((c) => c.masa_id === masaId && c.tur === "hesap");
     const toplam = aktifSiparisler.reduce(
-      (t, s) => t + s.siparis_kalemi.filter((k) => !k.reddedildi).reduce((tt, k) => tt + kalemTutar(k), 0),
+      (t, s) =>
+        t +
+        s.siparis_kalemi
+          .filter((k) => !k.reddedildi && !k.odul_karsiligi)
+          .reduce((tt, k) => tt + kalemTutar(k), 0),
       0
     );
     const durum: MasaDurum = cagri
@@ -403,6 +415,58 @@ export function SiparisGirisi({
     if (error) { alert("Fiş gönderilemedi: " + error.message); return; }
     setFisGonderildi(true);
     setTimeout(() => setFisGonderildi(false), 3000);
+  }
+
+  function puanBilgiGoster(metin: string) {
+    setPuanBilgi(metin);
+    setTimeout(() => setPuanBilgi(null), 6000);
+  }
+
+  // Müşteri koduyla bu adisyona puan işler (adisyon başına tek kazanım)
+  async function puanIsle(adisyonId: string) {
+    if (!musteriKod.trim()) return;
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("sadakat_puan_isle", {
+      p_adisyon_id: adisyonId,
+      p_musteri_kod: musteriKod.trim(),
+    });
+    if (error) return puanBilgiGoster("Puan işlenemedi: " + error.message);
+    const d = data as { musteri_ad: string; kazanilan: number; yeni_bakiye: number };
+    puanBilgiGoster(`⭐ ${d.musteri_ad}: +${d.kazanilan} puan (bakiye ${d.yeni_bakiye})`);
+    setMusteriKod("");
+  }
+
+  async function odulListesiAc() {
+    if (!musteriKod.trim()) return puanBilgiGoster("Önce müşteri kodunu yaz/okut.");
+    setOdulListeAcik(true);
+    if (oduller === null) {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("odul")
+        .select("id, ad, puan_bedeli")
+        .eq("cafe_id", kullanici.cafe_id)
+        .eq("aktif", true)
+        .order("sira")
+        .order("ad");
+      setOduller((data as typeof oduller) ?? []);
+    }
+  }
+
+  // Seçilen ödülü, kasiyerin dokunduğu kaleme uygular (kalem sunucuda bedava olur)
+  async function odulKalemeUygula(kalemId: string) {
+    if (!odulSecili) return;
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("odul_kullan", {
+      p_musteri_kod: musteriKod.trim(),
+      p_odul_id: odulSecili.id,
+      p_kalem_id: kalemId,
+    });
+    setOdulSecili(null);
+    if (error) return puanBilgiGoster("Ödül kullanılamadı: " + error.message);
+    const d = data as { musteri_ad: string; odul_ad: string; yeni_bakiye: number };
+    puanBilgiGoster(`🎁 ${d.musteri_ad}: "${d.odul_ad}" uygulandı (kalan ${d.yeni_bakiye} puan)`);
+    setMusteriKod("");
+    yenile();
   }
 
   async function manuelGonder(masaId: string | null) {
@@ -945,25 +1009,103 @@ export function SiparisGirisi({
                 <div className="text-xs font-extrabold tracking-[1px] text-metin-soluk">AÇIK ADİSYON</div>
                 <div className="mt-2 flex flex-col gap-1.5">
                   {panel.aktifSiparisler.flatMap((s) =>
-                    s.siparis_kalemi.filter((k) => !k.reddedildi).map((k) => (
-                      <div key={k.id} className="flex justify-between gap-2.5 text-[14.5px]">
-                        <span className="font-semibold">
-                          {kalemEtiket(k)}
-                          {s.durum === "odeme_bekliyor" && (
-                            <span className="ml-1.5 rounded bg-uyari-zemin px-1.5 py-0.5 text-[10.5px] font-extrabold text-uyari">
-                              ödeme bekliyor
-                            </span>
-                          )}
-                        </span>
-                        <span className="tabular-nums text-metin-soluk">{tl(kalemTutar(k))}</span>
-                      </div>
-                    ))
+                    s.siparis_kalemi.filter((k) => !k.reddedildi).map((k) => {
+                      const secilebilir = !!odulSecili && !k.odul_karsiligi;
+                      return (
+                        <div
+                          key={k.id}
+                          onClick={secilebilir ? () => odulKalemeUygula(k.id) : undefined}
+                          className={
+                            "flex justify-between gap-2.5 text-[14.5px] " +
+                            (secilebilir ? "-mx-1 cursor-pointer rounded-lg bg-uyari-zemin px-1 py-0.5" : "")
+                          }
+                        >
+                          <span className={"font-semibold " + (k.odul_karsiligi ? "text-metin-soluk line-through" : "")}>
+                            {kalemEtiket(k)}
+                            {k.odul_karsiligi && (
+                              <span className="ml-1.5 rounded bg-basari-zemin px-1.5 py-0.5 text-[10.5px] font-extrabold text-basari no-underline">
+                                🎁 ödül
+                              </span>
+                            )}
+                            {s.durum === "odeme_bekliyor" && (
+                              <span className="ml-1.5 rounded bg-uyari-zemin px-1.5 py-0.5 text-[10.5px] font-extrabold text-uyari">
+                                ödeme bekliyor
+                              </span>
+                            )}
+                          </span>
+                          <span className="tabular-nums text-metin-soluk">
+                            {k.odul_karsiligi ? tl(0) : tl(kalemTutar(k))}
+                          </span>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
                 <div className="mt-2.5 flex items-center justify-between border-t border-dashed border-cizgi-koyu pt-2.5 text-[15px] font-extrabold">
                   <span>Toplam</span>
                   <span className="text-metin-baslik">{tl(panel.toplam)}</span>
                 </div>
+
+                {/* Puan / ödül işleme (hesap kapatmadan önce) */}
+                <div className="mt-3 rounded-xl border border-cizgi bg-krem px-2.5 py-2.5">
+                  {puanBilgi && (
+                    <p className="mb-2 rounded-lg bg-basari-zemin px-2.5 py-1.5 text-[12px] font-bold text-basari">
+                      {puanBilgi}
+                    </p>
+                  )}
+                  {odulSecili ? (
+                    <p className="rounded-lg bg-uyari-zemin px-2.5 py-2 text-[12.5px] font-bold text-uyari">
+                      🎁 {odulSecili.ad} — yukarıda bedava yapılacak ürüne dokun
+                      <button onClick={() => setOdulSecili(null)} className="ml-2 underline">vazgeç</button>
+                    </p>
+                  ) : odulListeAcik ? (
+                    <div className="flex flex-col gap-1">
+                      <p className="text-[11.5px] font-extrabold text-metin-soluk">ÖDÜL SEÇ</p>
+                      {(oduller ?? []).length === 0 ? (
+                        <p className="text-[12px] text-metin-soluk">Tanımlı ödül yok.</p>
+                      ) : (
+                        (oduller ?? []).map((o) => (
+                          <button
+                            key={o.id}
+                            onClick={() => { setOdulSecili({ id: o.id, ad: o.ad }); setOdulListeAcik(false); }}
+                            className="flex justify-between rounded-lg border border-cizgi-koyu bg-kart px-2.5 py-1.5 text-[12.5px] font-bold"
+                          >
+                            <span>{o.ad}</span>
+                            <span className="text-metin-soluk">{o.puan_bedeli} puan</span>
+                          </button>
+                        ))
+                      )}
+                      <button onClick={() => setOdulListeAcik(false)} className="mt-0.5 text-[11.5px] text-metin-soluk">
+                        kapat
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-1.5">
+                      <input
+                        value={musteriKod}
+                        onChange={(e) => setMusteriKod(e.target.value.toUpperCase())}
+                        placeholder="Müşteri kodu (puan/ödül)"
+                        autoCapitalize="characters"
+                        className="min-w-0 flex-1 rounded-lg border border-cizgi-koyu bg-kart px-2.5 py-2 text-[13px] outline-none"
+                      />
+                      <button
+                        onClick={() => panel.adisyon && puanIsle(panel.adisyon.id)}
+                        disabled={!musteriKod.trim() || !panel.adisyon}
+                        className="rounded-lg bg-marka px-2.5 py-2 text-[12.5px] font-extrabold text-white disabled:opacity-40"
+                      >
+                        ⭐ Puan
+                      </button>
+                      <button
+                        onClick={odulListesiAc}
+                        disabled={!musteriKod.trim()}
+                        className="rounded-lg border border-cizgi-koyu bg-kart px-2.5 py-2 text-[12.5px] font-extrabold text-metin-orta disabled:opacity-40"
+                      >
+                        🎁 Ödül
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {panel.adisyon && (
                   <button
                     onClick={() => hesapFisiYazdir(panel.adisyon!.id)}
@@ -975,6 +1117,16 @@ export function SiparisGirisi({
                     }
                   >
                     {fisGonderildi ? "Fiş yazıcıya gönderildi ✓" : "🧾 Hesap Fişi Yazdır"}
+                  </button>
+                )}
+                {panel.adisyon && !tezgahOdeme && (
+                  <button
+                    onClick={() =>
+                      setTezgahOdeme({ siparisNo: null, adisyonId: panel.adisyon!.id, tutar: panel.toplam })
+                    }
+                    className="marka-gradyan mt-2 w-full rounded-xl px-3.5 py-3 text-[14.5px] font-extrabold text-white"
+                  >
+                    ₺ Ödeme Al · {tl(panel.toplam)}
                   </button>
                 )}
               </div>

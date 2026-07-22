@@ -19,11 +19,8 @@ export type KullaniciRol =
 // Kasa hesabı yetki anahtarları (null/eksik = izinli — geriye uyumlu)
 export type YetkiKodu =
   | "siparis"
-  | "iskonto"
-  | "ikram"
   | "gunsonu"
   | "tedarikci"
-  | "cari"
   | "gecmis"
   | "odul";
 

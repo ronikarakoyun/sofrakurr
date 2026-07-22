@@ -14,8 +14,6 @@ interface Ozet {
   iptal_tutar: number;
   ikram_tutar: number;
   iskonto_tutar: number;
-  cariye_yazilan: number;
-  cari_tahsilat: number;
 }
 
 interface Gider {
@@ -24,20 +22,6 @@ interface Gider {
   aciklama: string;
   odeme_turu: "nakit" | "kart" | "cari";
   created_at: string;
-}
-
-interface CariSatir {
-  id: string;
-  ad: string;
-  bakiye: number;
-}
-
-interface CariHareketSatir {
-  id: string;
-  tutar: number;
-  aciklama: string | null;
-  created_at: string;
-  cari: { ad: string };
 }
 
 interface GunSonuKaydi {
@@ -62,14 +46,10 @@ function sayi(v: string): number {
   return isNaN(n) ? 0 : n;
 }
 
-// Kasa ekranının "Gün Sonu" sekmesi: gün özeti, giderler, cariler ve mutabakat.
+// Kasa ekranının "Gün Sonu" sekmesi: gün özeti, giderler ve kasa mutabakatı.
 export function GunSonuBolumu({ kullanici }: { kullanici: Kullanici }) {
   const [ozet, setOzet] = useState<Ozet | null>(null);
   const [giderler, setGiderler] = useState<Gider[]>([]);
-  const [cariler, setCariler] = useState<CariSatir[]>([]);
-  const [bugunHareketler, setBugunHareketler] = useState<CariHareketSatir[]>([]);
-  const [cariNakit, setCariNakit] = useState(0);
-  const [cariKart, setCariKart] = useState(0);
   const [acikMasaSayisi, setAcikMasaSayisi] = useState(0);
   const [gecmis, setGecmis] = useState<GunSonuKaydi[]>([]);
 
@@ -92,15 +72,9 @@ export function GunSonuBolumu({ kullanici }: { kullanici: Kullanici }) {
     gunBasi.setHours(0, 0, 0, 0);
     const yarin = new Date(gunBasi.getTime() + 86400_000);
 
-    const [oz, g, c, h, acik, gs, bugunKayit] = await Promise.all([
+    const [oz, g, acik, gs, bugunKayit] = await Promise.all([
       supabase.rpc("rapor_ozet", { p_baslangic: gunBasi.toISOString(), p_bitis: yarin.toISOString() }),
       supabase.from("gider").select("id, tutar, aciklama, odeme_turu, created_at").gte("created_at", gunBasi.toISOString()).order("created_at", { ascending: false }),
-      supabase.from("cari").select("id, ad").eq("cafe_id", kullanici.cafe_id).eq("aktif", true),
-      supabase
-        .from("cari_hareket")
-        .select("id, tutar, aciklama, created_at, odeme_turu, cari(ad)")
-        .gte("created_at", gunBasi.toISOString())
-        .order("created_at", { ascending: false }),
       supabase.from("adisyon").select("id", { count: "exact", head: true }).eq("durum", "acik"),
       supabase.from("gun_sonu").select("*").order("tarih", { ascending: false }).limit(8),
       supabase.from("gun_sonu").select("*").eq("tarih", bugunStr()).maybeSingle(),
@@ -109,25 +83,6 @@ export function GunSonuBolumu({ kullanici }: { kullanici: Kullanici }) {
     setOzet(((oz.data ?? []) as Ozet[])[0] ?? null);
     setGiderler((g.data ?? []) as Gider[]);
     setAcikMasaSayisi(acik.count ?? 0);
-
-    // cari bakiyeleri
-    const { data: tumHareketler } = await supabase
-      .from("cari_hareket")
-      .select("cari_id, tutar")
-      .eq("cafe_id", kullanici.cafe_id);
-    const bakiyeler = new Map<string, number>();
-    (tumHareketler ?? []).forEach((x) => bakiyeler.set(x.cari_id, (bakiyeler.get(x.cari_id) ?? 0) + Number(x.tutar)));
-    setCariler(
-      ((c.data ?? []) as { id: string; ad: string }[])
-        .map((x) => ({ ...x, bakiye: bakiyeler.get(x.id) ?? 0 }))
-        .filter((x) => x.bakiye !== 0)
-        .sort((a, b) => b.bakiye - a.bakiye)
-    );
-
-    const hareketler = (h.data ?? []) as unknown as (CariHareketSatir & { odeme_turu: string | null })[];
-    setBugunHareketler(hareketler);
-    setCariNakit(hareketler.filter((x) => Number(x.tutar) < 0 && x.odeme_turu === "nakit").reduce((t, x) => t - Number(x.tutar), 0));
-    setCariKart(hareketler.filter((x) => Number(x.tutar) < 0 && x.odeme_turu === "kart").reduce((t, x) => t - Number(x.tutar), 0));
 
     const kayitlar = (gs.data ?? []) as GunSonuKaydi[];
     setGecmis(kayitlar.filter((k) => k.tarih !== bugunStr()));
@@ -186,8 +141,8 @@ export function GunSonuBolumu({ kullanici }: { kullanici: Kullanici }) {
   const giderNakit = giderler.filter((g) => g.odeme_turu === "nakit").reduce((t, g) => t + Number(g.tutar), 0);
   const giderKart = giderler.filter((g) => g.odeme_turu === "kart").reduce((t, g) => t + Number(g.tutar), 0);
 
-  const beklenenNakit = ozet ? sayi(acilisNakit) + Number(ozet.nakit_ciro) + cariNakit - giderNakit : 0;
-  const beklenenKart = ozet ? Number(ozet.kart_ciro) + cariKart - giderKart : 0;
+  const beklenenNakit = ozet ? sayi(acilisNakit) + Number(ozet.nakit_ciro) - giderNakit : 0;
+  const beklenenKart = ozet ? Number(ozet.kart_ciro) - giderKart : 0;
   const nakitFark = sayi(sayilanNakit) - beklenenNakit;
   const kartFark = sayi(sayilanKart) - beklenenKart;
 
@@ -263,7 +218,6 @@ export function GunSonuBolumu({ kullanici }: { kullanici: Kullanici }) {
             { etiket: "Kapanan hesap", deger: String(ozet.adisyon_sayisi) },
             { etiket: "İkram", deger: tl(Number(ozet.ikram_tutar)) },
             { etiket: "İskonto", deger: tl(Number(ozet.iskonto_tutar)) },
-            { etiket: "Cariye yazılan", deger: tl(Number(ozet.cariye_yazilan)) },
             { etiket: "İptal / red", deger: `${ozet.iptal_sayisi} · ${tl(Number(ozet.iptal_tutar))}`, kirmizi: ozet.iptal_sayisi > 0 },
           ].map((k) => (
             <div key={k.etiket} className="rounded-2xl border border-cizgi bg-kart px-4 py-3">
@@ -325,39 +279,6 @@ export function GunSonuBolumu({ kullanici }: { kullanici: Kullanici }) {
           )}
         </section>
 
-        {/* Cariler */}
-        <section className="rounded-2xl border border-cizgi bg-kart p-4">
-          <h2 className="text-sm font-extrabold">Cari hesaplar</h2>
-          {cariler.length === 0 ? (
-            <p className="mt-2.5 text-[13px] text-metin-silik">Borçlu cari yok.</p>
-          ) : (
-            <div className="mt-2.5 flex flex-col gap-1.5">
-              {cariler.map((c) => (
-                <div key={c.id} className="flex items-center justify-between text-[13.5px]">
-                  <span className="font-semibold">{c.ad}</span>
-                  <span className={"font-extrabold tabular-nums " + (c.bakiye > 0 ? "text-tehlike" : "text-basari")}>
-                    {tl(Number(c.bakiye))}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          <h3 className="mt-4 text-xs font-extrabold tracking-wide text-metin-soluk">BUGÜNKÜ CARİ HAREKETLER</h3>
-          <div className="mt-1.5 flex flex-col gap-1.5">
-            {bugunHareketler.map((h) => (
-              <div key={h.id} className="flex items-center justify-between gap-2 text-[13px]">
-                <span className="min-w-0 flex-1 truncate text-metin-orta">
-                  <strong>{h.cari.ad}</strong> — {h.aciklama}
-                </span>
-                <span className={"font-bold tabular-nums " + (Number(h.tutar) > 0 ? "text-tehlike" : "text-basari")}>
-                  {Number(h.tutar) > 0 ? "+" : ""}
-                  {tl(Number(h.tutar))}
-                </span>
-              </div>
-            ))}
-            {bugunHareketler.length === 0 && <p className="text-[13px] text-metin-silik">Bugün cari hareket yok.</p>}
-          </div>
-        </section>
       </div>
 
       {/* Mutabakat */}
@@ -378,10 +299,6 @@ export function GunSonuBolumu({ kullanici }: { kullanici: Kullanici }) {
               <div className="flex justify-between text-metin-orta">
                 <span>+ Nakit ciro</span>
                 <span className="tabular-nums">{tl(Number(ozet?.nakit_ciro ?? 0))}</span>
-              </div>
-              <div className="flex justify-between text-metin-orta">
-                <span>+ Cari tahsilat (nakit)</span>
-                <span className="tabular-nums">{tl(cariNakit)}</span>
               </div>
               <div className="flex justify-between text-metin-orta">
                 <span>− Nakit harcama</span>
@@ -408,10 +325,6 @@ export function GunSonuBolumu({ kullanici }: { kullanici: Kullanici }) {
               <div className="flex justify-between text-metin-orta">
                 <span>+ Kart ciro</span>
                 <span className="tabular-nums">{tl(Number(ozet?.kart_ciro ?? 0))}</span>
-              </div>
-              <div className="flex justify-between text-metin-orta">
-                <span>+ Cari tahsilat (kart)</span>
-                <span className="tabular-nums">{tl(cariKart)}</span>
               </div>
               <div className="flex justify-between text-metin-orta">
                 <span>− Kart harcama</span>

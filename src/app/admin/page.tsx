@@ -18,8 +18,6 @@ interface Ozet {
   iptal_tutar: number;
   ikram_tutar: number;
   iskonto_tutar: number;
-  cariye_yazilan: number;
-  cari_tahsilat: number;
 }
 
 interface Anlik {
@@ -196,16 +194,6 @@ export default function AdminGenelBakis() {
           {anlik.acikCagri > 0 && (
             <span className="rounded-full bg-tehlike-zemin px-3.5 py-1.5 text-[13px] font-bold text-tehlike">
               {anlik.acikCagri} açık çağrı
-            </span>
-          )}
-          {ozet && Number(ozet.cariye_yazilan) > 0 && (
-            <span className="rounded-full bg-uyari-zemin px-3.5 py-1.5 text-[13px] font-bold text-uyari">
-              cariye yazılan {tl(Number(ozet.cariye_yazilan))}
-            </span>
-          )}
-          {ozet && Number(ozet.cari_tahsilat) > 0 && (
-            <span className="rounded-full bg-basari-zemin px-3.5 py-1.5 text-[13px] font-bold text-basari">
-              cari tahsilat {tl(Number(ozet.cari_tahsilat))}
             </span>
           )}
         </div>
