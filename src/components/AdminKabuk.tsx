@@ -13,10 +13,9 @@ const NAV = [
   { href: "/admin/raporlar", ad: "Raporlar" },
   { href: "/admin/sadakat", ad: "Sadakat" },
   { href: "/admin/kampanyalar", ad: "Kampanyalar" },
-  { href: "/admin/masalar", ad: "Masalar & QR" },
+  { href: "/admin/tedarikci", ad: "Tedarikçi" },
   { href: "/admin/personel", ad: "Personel" },
   { href: "/admin/entegrasyonlar", ad: "Entegrasyonlar" },
-  { href: "/admin/ayarlar", ad: "Ayarlar" },
 ];
 
 export function AdminKabuk({ children }: { children: React.ReactNode }) {
@@ -62,13 +61,13 @@ export function AdminKabuk({ children }: { children: React.ReactNode }) {
 
       {/* İçerik */}
       <main className="min-w-[320px] flex-1 px-5 pb-12 pt-6 sm:px-8">
-        {/* Sağ üst: kasaya hızlı geçiş (admin oturumu kasaya da erişir) */}
+        {/* Sağ üst: mutfak ekranına hızlı geçiş (admin oturumu KDS'e de erişir) */}
         <div className="-mt-1 mb-3 flex justify-end">
           <Link
-            href="/kasa"
+            href="/kds"
             className="rounded-[10px] border border-cizgi-koyu bg-kart px-3 py-2 text-[13px] font-bold text-metin-orta hover:border-marka"
           >
-            Kasa →
+            Mutfak Ekranı →
           </Link>
         </div>
         {children}

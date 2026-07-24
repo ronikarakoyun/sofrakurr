@@ -1,4 +1,4 @@
-// SofraKur service worker — garson push bildirimleri
+// SofraKur service worker — personel push bildirimleri (KDS)
 self.addEventListener("push", (event) => {
   let veri = { baslik: "SofraKur", govde: "" };
   try {
@@ -22,12 +22,12 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((liste) => {
-      // Açık bir SofraKur sekmesi varsa ona odaklan; yoksa kasa ekranını aç
-      // (garson ekranı emekli edildi — bildirimi alan personel kasa/KDS'te).
-      const acik = liste.find((c) => c.url.includes("/kasa") || c.url.includes("/kds"));
+      // Açık bir SofraKur sekmesi varsa ona odaklan; yoksa mutfak ekranını aç
+      // (kasa ekranı emekli edildi — bildirimi alan personel KDS'te).
+      const acik = liste.find((c) => c.url.includes("/kds"));
       if (acik) return acik.focus();
       if (liste.length) return liste[0].focus();
-      return clients.openWindow("/kasa");
+      return clients.openWindow("/kds");
     })
   );
 });

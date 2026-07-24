@@ -11,7 +11,7 @@ import {
 
 const ROL_SAYFA: Record<string, string> = {
   admin: "/admin",
-  kasa: "/kasa",
+  kasa: "/kds", // kasa ekranı emekli: tezgah personeli de mutfak ekranını kullanır
   mutfak: "/kds",
   franchise: "/panel",
   super_admin: "/panel",

@@ -79,7 +79,7 @@ export default function PanelSayfasi() {
     setBasari(`Menü ${ozet?.sube ?? 0} şubeye uygulandı ✓`);
   }
 
-  async function kafeyeGec(k: PanelKafe, hedef: "/admin" | "/kasa") {
+  async function kafeyeGec(k: PanelKafe, hedef: "/admin" | "/kds") {
     if (meskul) return;
     setMeskul(k.id);
     const { error } = await supabase.rpc("kafe_sec_panel", { p_cafe_id: k.id });
@@ -198,11 +198,11 @@ export default function PanelSayfasi() {
                   {meskul === k.id ? "Geçiliyor…" : "Yönet →"}
                 </button>
                 <button
-                  onClick={() => kafeyeGec(k, "/kasa")}
+                  onClick={() => kafeyeGec(k, "/kds")}
                   disabled={!!meskul}
                   className="rounded-xl border border-cizgi-koyu bg-kart px-3 py-2.5 text-[13px] font-bold text-metin-orta disabled:opacity-50"
                 >
-                  Kasa
+                  Mutfak
                 </button>
               </div>
             </div>
@@ -223,6 +223,15 @@ export default function PanelSayfasi() {
             </p>
             <p className="mt-0.5 text-[12.5px] text-metin-soluk">
               Kafe kafe ciro, adisyon ve sipariş sayıları.
+            </p>
+          </Link>
+          <Link
+            href="/panel/hatalar"
+            className="rounded-2xl border border-cizgi bg-kart p-4 transition hover:border-marka"
+          >
+            <p className="text-sm font-extrabold text-metin-baslik">Hata Kayıtları →</p>
+            <p className="mt-0.5 text-[12.5px] text-metin-soluk">
+              Canlıda oluşan istemci/sunucu hataları.
             </p>
           </Link>
           {superMi && (

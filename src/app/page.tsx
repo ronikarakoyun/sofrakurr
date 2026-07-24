@@ -11,7 +11,7 @@ export default function Home() {
           className="h-16 w-16 rounded-2xl shadow-[0_6px_18px_rgba(138,75,31,0.3)]"
         />
         <h1 className="font-serif text-3xl font-semibold text-metin-baslik">SofraKur</h1>
-        <p className="text-sm text-metin-soluk">Masadan sipariş, mutfağa taze düşer.</p>
+        <p className="text-sm text-metin-soluk">Kafeni seç, sipariş ver, sıra bekleme.</p>
       </div>
 
       <div className="anim-kart w-full max-w-md rounded-2xl border border-cizgi bg-kart p-6 text-center shadow-[0_1px_3px_rgba(90,58,29,0.05)]">
@@ -19,8 +19,13 @@ export default function Home() {
           Sipariş vermek için
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-metin-soluk">
-          Masanızdaki <span className="font-bold text-metin">QR kodu</span> telefonunuzun
-          kamerasıyla okutun — menü anında açılır, siparişinizi masanızdan verirsiniz.
+          <span className="font-bold text-metin">SofraKur uygulamasını</span> indir,{" "}
+          <span className="font-bold text-metin">Kafeler</span> sekmesinden kafeni seç —
+          siparişin doğrudan mutfağa düşer, hazır olunca bildirim gelir; kasada sıra
+          beklemezsin.
+        </p>
+        <p className="mt-3 rounded-xl bg-uyari-zemin px-3 py-2 text-[12px] font-semibold text-uyari">
+          Uygulama çok yakında App Store ve Google Play&apos;de.
         </p>
       </div>
 

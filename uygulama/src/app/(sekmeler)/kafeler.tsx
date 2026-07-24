@@ -1,8 +1,7 @@
 import { LinearGradient } from "expo-linear-gradient";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "expo-router";
+import { useMemo, useState } from "react";
 import {
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -15,79 +14,30 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ikon } from "@/components/Ikon";
 import { UrunDetay } from "@/components/UrunDetay";
 import { useSepet } from "@/lib/sepet";
-import { supabase } from "@/lib/supabase";
 import { renk } from "@/lib/tema";
 import { kalemBirimFiyat, tl, type Urun } from "@/lib/tipler";
 
-interface MasaSatiri {
-  bolum: string;
-  masa_id: string;
-  masa_ad: string;
-  dolu: boolean;
-}
-
-// Kafeler: kafe listesi → masa seçimi (tasarımdaki bölümlü harita) → menü.
-// Kamera/QR yok; masa manuel seçilir, "önce ödeme" akışı riski karşılar.
+// Kafeler: kafe listesi → menü. Masa kavramı emekli edildi (Faz 7):
+// tüm kafeler self-servis, sipariş numarayla tezgahtan teslim alınır.
 export default function KafelerEkrani() {
   const router = useRouter();
   const {
     kafeler,
     seciliKafe,
-    oturum,
     menu,
     sepet,
     menuYukleniyor,
     kafeSec,
-    masaSec,
-    masaBirak,
     sepeteEkle,
   } = useSepet();
 
   const [aktifKat, setAktifKat] = useState("Tümü");
   const [seciliUrun, setSeciliUrun] = useState<Urun | null>(null);
-  const [masalar, setMasalar] = useState<MasaSatiri[] | null>(null);
-  const [secilen, setSecilen] = useState<string | null>(null); // masa_id (seçim animasyonu)
   const [kafeArama, setKafeArama] = useState("");
 
   const sepetAdet = sepet.reduce((t, k) => t + k.adet, 0);
   const sepetToplam = sepet.reduce((t, k) => t + kalemBirimFiyat(k) * k.adet, 0);
   const kampanyalar = useMemo(() => menu.flatMap((k) => k.urun).filter((u) => u.kampanya), [menu]);
-
-  const masalariYukle = useCallback(async () => {
-    if (!seciliKafe) return;
-    const { data } = await supabase.rpc("masa_durumlari", { p_cafe_id: seciliKafe.id });
-    setMasalar((data as MasaSatiri[]) ?? []);
-  }, [seciliKafe]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (seciliKafe && seciliKafe.masa_duzeni && !oturum) masalariYukle();
-    }, [seciliKafe, oturum, masalariYukle])
-  );
-
-  async function masayaOtur(m: MasaSatiri) {
-    const otur = async () => {
-      setSecilen(m.masa_id);
-      const hata = await masaSec(m.masa_id);
-      setSecilen(null);
-      if (hata) Alert.alert("Olmadı", hata);
-      else setAktifKat("Tümü");
-    };
-    if (m.dolu) {
-      // Dolu masada oturan müşteri ek sipariş verebilmeli; yanlış masa
-      // seçimini onay sorusu engeller.
-      Alert.alert(
-        "Bu masada açık hesap var",
-        `${m.masa_ad} şu an dolu görünüyor. Bu masada sen oturuyorsan devam et.`,
-        [
-          { text: "Vazgeç", style: "cancel" },
-          { text: "Bu masadayım", onPress: otur },
-        ]
-      );
-    } else {
-      otur();
-    }
-  }
 
   // ── 1) Kafe listesi (arama + il grupları) ──
   if (!seciliKafe) {
@@ -127,14 +77,7 @@ export default function KafelerEkrani() {
                 )}
                 <View style={{ gap: 12 }}>
                   {grup.map((k) => (
-                    <Pressable
-                      key={k.id}
-                      onPress={() => {
-                        setMasalar(null);
-                        kafeSec(k);
-                      }}
-                      style={s.kafeKart}
-                    >
+                    <Pressable key={k.id} onPress={() => kafeSec(k)} style={s.kafeKart}>
                       <View style={s.kafeLogo}>
                         <Ikon ad="kahve" boyut={26} kalinlik={1.7} />
                       </View>
@@ -142,7 +85,7 @@ export default function KafelerEkrani() {
                         <Text style={s.kafeAd}>{k.ad}</Text>
                         <Text style={s.kafeAlt}>
                           {k.ilce ? `${k.ilce} · ` : ""}
-                          {k.masa_duzeni ? "Menüyü gör · Sipariş ver" : "Self-servis · Tezgahtan teslim"}
+                          Sipariş ver · Tezgahtan teslim al
                         </Text>
                       </View>
                       <Text style={s.ok}>›</Text>
@@ -162,82 +105,7 @@ export default function KafelerEkrani() {
     );
   }
 
-  // ── 2) Masa seçimi (yalnız masalı kafede; self-servis direkt menüye geçer) ──
-  if (seciliKafe.masa_duzeni && !oturum) {
-    const bolumler = [...new Set((masalar ?? []).map((m) => m.bolum))];
-    return (
-      <SafeAreaView style={s.guvenli} edges={["top"]}>
-        <View style={s.ustBar}>
-          <Pressable onPress={() => kafeSec(null)} style={s.geri}>
-            <Text style={s.geriYazi}>←</Text>
-          </Pressable>
-          <View style={{ flex: 1 }}>
-            <Text style={s.kafeBaslik}>{seciliKafe.ad}</Text>
-            <Text style={s.masaDurum}>Masanı seç — menü hemen açılır</Text>
-          </View>
-        </View>
-
-        {/* Lejant */}
-        <View style={s.lejant}>
-          <View style={s.lejantOge}>
-            <View style={[s.lejantKutu, { backgroundColor: "#fff", borderWidth: 1.5, borderColor: renk.cizgiKoyu }]} />
-            <Text style={s.lejantYazi}>Boş</Text>
-          </View>
-          <View style={s.lejantOge}>
-            <View style={[s.lejantKutu, { backgroundColor: renk.cizgiKoyu }]} />
-            <Text style={s.lejantYazi}>Dolu</Text>
-          </View>
-          <View style={s.lejantOge}>
-            <LinearGradient colors={["#c86f2c", "#8a4b1f"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.lejantKutu} />
-            <Text style={s.lejantYazi}>Seçili</Text>
-          </View>
-        </View>
-
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 120 }}>
-          {masalar === null && <Text style={s.altYazi}>Masalar yükleniyor…</Text>}
-          {masalar !== null && masalar.length === 0 && (
-            <Text style={s.altYazi}>
-              Masalar şu an listelenemiyor — internetini kontrol edip aşağı çekerek yenile.
-            </Text>
-          )}
-          {bolumler.map((b) => (
-            <View key={b} style={{ marginTop: 14 }}>
-              <Text style={s.bolumBaslik}>{b}</Text>
-              <View style={s.masaIzgara}>
-                {(masalar ?? [])
-                  .filter((m) => m.bolum === b)
-                  .map((m) =>
-                    secilen === m.masa_id ? (
-                      <LinearGradient
-                        key={m.masa_id}
-                        colors={["#c86f2c", "#8a4b1f"]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={[s.masaKutu, { borderWidth: 0 }]}
-                      >
-                        <Text style={[s.masaAd, { color: "#fff" }]}>{m.masa_ad}</Text>
-                        <Text style={[s.masaAltYazi, { color: "rgba(255,255,255,0.85)" }]}>Seçiliyor…</Text>
-                      </LinearGradient>
-                    ) : (
-                      <Pressable
-                        key={m.masa_id}
-                        onPress={() => masayaOtur(m)}
-                        style={[s.masaKutu, m.dolu && s.masaDoluKutu]}
-                      >
-                        <Text style={[s.masaAd, m.dolu && { color: renk.metinSoluk }]}>{m.masa_ad}</Text>
-                        <Text style={s.masaAltYazi}>{m.dolu ? "Dolu" : "Boş"}</Text>
-                      </Pressable>
-                    )
-                  )}
-              </View>
-            </View>
-          ))}
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
-  // ── 3) Kafe menüsü ──
+  // ── 2) Kafe menüsü ──
   const kategoriAdlari = ["Tümü", ...menu.map((k) => k.ad)];
   const gosterilecek = menu.filter((k) => aktifKat === "Tümü" || k.ad === aktifKat);
 
@@ -249,16 +117,7 @@ export default function KafelerEkrani() {
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={s.kafeBaslik}>{seciliKafe.ad}</Text>
-          {oturum ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 1 }}>
-              <Text style={s.masaEtiket}>Masa: {oturum.masa_ad}</Text>
-              <Pressable onPress={masaBirak}>
-                <Text style={s.masaDegistir}>Değiştir</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Text style={s.masaEtiket}>Self-servis · Siparişini tezgahtan al</Text>
-          )}
+          <Text style={s.masaEtiket}>Hazır olunca bildirim gelir · Tezgahtan teslim</Text>
         </View>
       </View>
 
@@ -414,34 +273,7 @@ const s = StyleSheet.create({
   },
   geriYazi: { fontSize: 19, color: renk.markaKoyu, marginTop: -2 },
   kafeBaslik: { fontSize: 19, fontWeight: "800", color: renk.metinBaslik },
-  masaDurum: { marginTop: 1, fontSize: 12, fontWeight: "600", color: renk.metinSoluk },
   masaEtiket: { fontSize: 12, fontWeight: "700", color: renk.marka },
-  masaDegistir: { fontSize: 12, fontWeight: "700", color: renk.metinSoluk, textDecorationLine: "underline" },
-  lejant: { flexDirection: "row", gap: 14, paddingHorizontal: 18, paddingVertical: 6 },
-  lejantOge: { flexDirection: "row", alignItems: "center", gap: 6 },
-  lejantKutu: { width: 12, height: 12, borderRadius: 4 },
-  lejantYazi: { fontSize: 11.5, fontWeight: "700", color: renk.metinOrta },
-  bolumBaslik: {
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-    color: renk.metinSoluk,
-    marginBottom: 8,
-  },
-  masaIzgara: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  masaKutu: {
-    width: "31%",
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: renk.cizgiKoyu,
-    backgroundColor: "#fff",
-    paddingVertical: 13,
-    paddingHorizontal: 6,
-    alignItems: "center",
-  },
-  masaDoluKutu: { backgroundColor: renk.cizgiKoyu },
-  masaAd: { fontSize: 14, fontWeight: "800", color: renk.metin },
-  masaAltYazi: { marginTop: 2, fontSize: 11, fontWeight: "600", color: renk.metinSoluk },
   katSerit: { gap: 8, paddingHorizontal: 14, paddingBottom: 8 },
   katCip: {
     borderRadius: 18,

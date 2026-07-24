@@ -23,6 +23,10 @@ export interface PuanHareketi {
 export interface MusteriOzet {
   ad: string;
   musteri_kod: string;
+  // Tek cüzdan (0059): toplam bakiye + TL karşılığı. 'hesaplar' geçiş dönemi
+  // uyumluluğu için sunucudan tek sentetik satırla gelmeye devam ediyor.
+  puan_bakiye?: number;
+  tl_karsiligi?: number;
   hesaplar: SadakatHesap[];
   hareketler: PuanHareketi[];
 }
@@ -97,16 +101,6 @@ export interface SepetKalemi {
   adet: number;
   opsiyonlar: SecilenOpsiyon[];
   not?: string;
-}
-
-export interface MasaOturumu {
-  token: string;
-  cafe_id: string;
-  cafe_ad: string;
-  masa_id: string;
-  masa_ad: string;
-  odeme_modu: "once_odeme" | "acik_hesap";
-  bitis: number;
 }
 
 export function kalemBirimFiyat(k: SepetKalemi): number {

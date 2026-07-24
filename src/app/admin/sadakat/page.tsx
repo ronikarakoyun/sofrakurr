@@ -3,13 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useKullanici } from "@/lib/useKullanici";
-
-interface Odul {
-  id: string;
-  ad: string;
-  puan_bedeli: number;
-  aktif: boolean;
-}
+import { tl } from "@/lib/types";
 
 interface Hareket {
   id: string;
@@ -21,23 +15,24 @@ interface Hareket {
 
 const TUR_ETIKET: Record<string, string> = {
   kazanim: "Kazanım",
-  harcama: "Ödül",
+  harcama: "Harcama",
   duzeltme: "Düzeltme",
 };
 
+// Tek cüzdan para-puan modeli (Faz 7): 1 TL = 1 puan, 10 puan = 1 TL.
+// Puan teslimde otomatik kazanılır, uygulamada sipariş verirken harcanır.
+// Kafe bazlı kazanılan/harcanan dökümü ileride kafeler arası mahsuplaşmanın
+// (komisyon sistemi) ön görünümüdür.
 export default function SadakatSayfasi() {
   const { kullanici, yukleniyor } = useKullanici(["admin"]);
   const supabase = createClient();
 
   const [sadakatAktif, setSadakatAktif] = useState(true);
-  const [carpan, setCarpan] = useState("1");
-  const [oduller, setOduller] = useState<Odul[]>([]);
   const [hareketler, setHareketler] = useState<Hareket[]>([]);
+  const [kazanilan, setKazanilan] = useState(0);
+  const [harcanan, setHarcanan] = useState(0);
   const [mesaj, setMesaj] = useState<{ metin: string; hata: boolean } | null>(null);
 
-  // formlar
-  const [yeniOdulAd, setYeniOdulAd] = useState("");
-  const [yeniOdulBedel, setYeniOdulBedel] = useState("");
   const [duzeltKod, setDuzeltKod] = useState("");
   const [duzeltPuan, setDuzeltPuan] = useState("");
   const [duzeltAciklama, setDuzeltAciklama] = useState("");
@@ -50,22 +45,26 @@ export default function SadakatSayfasi() {
 
   const yukle = useCallback(async () => {
     if (!kullanici) return;
-    const [c, o, h] = await Promise.all([
-      supabase.from("cafe").select("sadakat_aktif, puan_carpani").eq("id", kullanici.cafe_id).single(),
-      supabase.from("odul").select("id, ad, puan_bedeli, aktif").eq("cafe_id", kullanici.cafe_id).order("sira").order("ad"),
+    const [c, h, toplamlar] = await Promise.all([
+      supabase.from("cafe").select("sadakat_aktif").eq("id", kullanici.cafe_id).single(),
       supabase
         .from("puan_hareketi")
         .select("id, tur, puan, aciklama, created_at")
         .eq("cafe_id", kullanici.cafe_id)
         .order("created_at", { ascending: false })
         .limit(25),
+      supabase
+        .from("puan_hareketi")
+        .select("tur, puan")
+        .eq("cafe_id", kullanici.cafe_id),
     ]);
-    if (c.data) {
-      setSadakatAktif(c.data.sadakat_aktif);
-      setCarpan(String(c.data.puan_carpani));
-    }
-    setOduller((o.data as Odul[]) ?? []);
+    if (c.data) setSadakatAktif(c.data.sadakat_aktif);
     setHareketler((h.data as Hareket[]) ?? []);
+    const satirlar = (toplamlar.data as { tur: string; puan: number }[]) ?? [];
+    setKazanilan(satirlar.filter((s) => s.tur === "kazanim").reduce((t, s) => t + s.puan, 0));
+    setHarcanan(
+      satirlar.filter((s) => s.tur === "harcama").reduce((t, s) => t + Math.abs(s.puan), 0)
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kullanici]);
 
@@ -73,41 +72,16 @@ export default function SadakatSayfasi() {
     yukle();
   }, [yukle]);
 
-  async function ayarKaydet(yeniAktif?: boolean) {
+  async function aktifDegistir() {
     if (!kullanici) return;
-    const n = parseFloat(carpan.replace(",", "."));
-    if (isNaN(n) || n < 0) return bilgi("Geçerli bir çarpan gir (örn. 1 veya 0,5)", true);
+    const yeni = !sadakatAktif;
     const { error } = await supabase
       .from("cafe")
-      .update({ sadakat_aktif: yeniAktif ?? sadakatAktif, puan_carpani: n })
+      .update({ sadakat_aktif: yeni })
       .eq("id", kullanici.cafe_id);
     if (error) return bilgi(error.message, true);
-    bilgi("Ayarlar kaydedildi ✓");
-    yukle();
-  }
-
-  async function odulEkle() {
-    if (!kullanici || meskul) return;
-    const bedel = parseInt(yeniOdulBedel, 10);
-    if (!yeniOdulAd.trim() || isNaN(bedel) || bedel <= 0) {
-      return bilgi("Ödül adı ve pozitif puan bedeli gerekli", true);
-    }
-    setMeskul(true);
-    const { error } = await supabase
-      .from("odul")
-      .insert({ cafe_id: kullanici.cafe_id, ad: yeniOdulAd.trim(), puan_bedeli: bedel });
-    setMeskul(false);
-    if (error) return bilgi(error.message, true);
-    setYeniOdulAd("");
-    setYeniOdulBedel("");
-    bilgi("Ödül eklendi ✓");
-    yukle();
-  }
-
-  async function odulToggle(o: Odul) {
-    const { error } = await supabase.from("odul").update({ aktif: !o.aktif }).eq("id", o.id);
-    if (error) return bilgi(error.message, true);
-    yukle();
+    setSadakatAktif(yeni);
+    bilgi(yeni ? "Sadakat programı açıldı ✓" : "Sadakat programı kapatıldı");
   }
 
   async function puanDuzelt() {
@@ -143,8 +117,8 @@ export default function SadakatSayfasi() {
     <div className="max-w-2xl">
       <h1 className="font-serif text-2xl font-semibold text-metin-baslik">Sadakat</h1>
       <p className="mt-1 text-sm text-metin-soluk">
-        Müşteri uygulamasındaki puan programı: kasada kod okutulur, puan birikir,
-        puanla ödül alınır.
+        Puan programı tüm SofraKur kafelerinde ortak çalışır: müşteri siparişini teslim
+        aldığında puan otomatik birikir, uygulamadan sipariş verirken indirim olarak harcar.
       </p>
 
       {mesaj && (
@@ -158,16 +132,13 @@ export default function SadakatSayfasi() {
         </p>
       )}
 
-      {/* Ayarlar */}
+      {/* Program + sabit kural */}
       <div className="mt-5 rounded-2xl border border-cizgi bg-kart p-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-sm font-extrabold text-metin-baslik">Program</h2>
           <span className="flex-1" />
           <button
-            onClick={() => {
-              setSadakatAktif(!sadakatAktif);
-              ayarKaydet(!sadakatAktif);
-            }}
+            onClick={aktifDegistir}
             className={
               "rounded-lg px-3 py-1.5 text-[12.5px] font-extrabold " +
               (sadakatAktif ? "bg-basari-zemin text-basari" : "bg-tehlike-zemin text-tehlike")
@@ -176,79 +147,47 @@ export default function SadakatSayfasi() {
             {sadakatAktif ? "Açık ✓" : "Kapalı"}
           </button>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-semibold text-metin-orta">1 TL harcama =</span>
-          <input
-            value={carpan}
-            onChange={(e) => setCarpan(e.target.value)}
-            inputMode="decimal"
-            className={inputStil + " w-20 text-center font-bold"}
-          />
-          <span className="font-semibold text-metin-orta">puan</span>
-          <button
-            onClick={() => ayarKaydet()}
-            className="marka-gradyan ml-2 rounded-xl px-4 py-2 text-[13px] font-extrabold text-white"
-          >
-            Kaydet
-          </button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span className="rounded-xl bg-krem-koyu px-3.5 py-2 text-[13.5px] font-extrabold text-metin-baslik">
+            ☕ 1 TL harcama = 1 puan
+          </span>
+          <span className="rounded-xl bg-krem-koyu px-3.5 py-2 text-[13.5px] font-extrabold text-metin-baslik">
+            🎁 10 puan = 1 TL indirim
+          </span>
         </div>
+        <p className="mt-2.5 text-[12px] leading-relaxed text-metin-soluk">
+          Kural tüm kafelerde sabittir; kafe bazlı kampanyalar ileride eklenecek.
+          Program kapalıyken bu kafede puan kazanılmaz ve harcanmaz.
+        </p>
       </div>
 
-      {/* Ödüller */}
+      {/* Kafe defteri (mahsuplaşma ön görünümü) */}
       <div className="mt-5 rounded-2xl border border-cizgi bg-kart p-4">
-        <h2 className="text-sm font-extrabold text-metin-baslik">Ödüller</h2>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <input
-            value={yeniOdulAd}
-            onChange={(e) => setYeniOdulAd(e.target.value)}
-            placeholder="Ödül adı (örn. Bedava Çay)"
-            className={inputStil + " min-w-[180px] flex-1"}
-          />
-          <input
-            value={yeniOdulBedel}
-            onChange={(e) => setYeniOdulBedel(e.target.value)}
-            inputMode="numeric"
-            placeholder="puan"
-            className={inputStil + " w-24 text-right font-bold"}
-          />
-          <button
-            onClick={odulEkle}
-            disabled={meskul}
-            className="rounded-xl bg-basari px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-50"
-          >
-            Ekle
-          </button>
-        </div>
-        <div className="mt-3 flex flex-col gap-1.5">
-          {oduller.length === 0 && (
-            <p className="text-[13px] text-metin-silik">Henüz ödül tanımlanmadı.</p>
-          )}
-          {oduller.map((o) => (
-            <div
-              key={o.id}
-              className={
-                "flex items-center gap-3 rounded-xl border border-cizgi px-3.5 py-2.5 " +
-                (o.aktif ? "" : "opacity-55")
-              }
-            >
-              <span className="min-w-0 flex-1 text-sm font-bold">🎁 {o.ad}</span>
-              <span className="text-[13.5px] font-extrabold tabular-nums text-marka">
-                {o.puan_bedeli} puan
-              </span>
-              <button
-                onClick={() => odulToggle(o)}
-                className={
-                  "rounded-lg px-2.5 py-1.5 text-[11.5px] font-extrabold " +
-                  (o.aktif
-                    ? "text-tehlike-yumusak hover:bg-tehlike-zemin"
-                    : "bg-basari-zemin text-basari")
-                }
-              >
-                {o.aktif ? "Pasife Al" : "Aktif Et"}
-              </button>
+        <h2 className="text-sm font-extrabold text-metin-baslik">Bu Kafenin Puan Defteri</h2>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-xl bg-basari-zemin px-3.5 py-3">
+            <div className="text-[11.5px] font-extrabold text-basari">BURADA KAZANILAN</div>
+            <div className="mt-0.5 text-lg font-extrabold tabular-nums text-basari">
+              {kazanilan.toLocaleString("tr-TR")} puan
             </div>
-          ))}
+            <div className="text-[11.5px] font-semibold text-basari/80">
+              ≈ {tl(kazanilan / 10)}
+            </div>
+          </div>
+          <div className="rounded-xl bg-uyari-zemin px-3.5 py-3">
+            <div className="text-[11.5px] font-extrabold text-uyari">BURADA HARCANAN</div>
+            <div className="mt-0.5 text-lg font-extrabold tabular-nums text-uyari">
+              {harcanan.toLocaleString("tr-TR")} puan
+            </div>
+            <div className="text-[11.5px] font-semibold text-uyari/80">
+              ≈ {tl(harcanan / 10)} indirim
+            </div>
+          </div>
         </div>
+        <p className="mt-2 text-[11.5px] leading-relaxed text-metin-silik">
+          Puanlar tüm kafelerde geçtiği için başka kafede kazanılan puan burada
+          harcanabilir; bu döküm ileride kafeler arası mahsuplaşmanın temelidir.
+        </p>
       </div>
 
       {/* Manuel düzeltme */}

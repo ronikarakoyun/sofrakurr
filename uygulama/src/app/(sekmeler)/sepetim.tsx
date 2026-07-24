@@ -16,10 +16,10 @@ import { Ikon } from "@/components/Ikon";
 import { useSepet } from "@/lib/sepet";
 import { supabase } from "@/lib/supabase";
 import { renk } from "@/lib/tema";
-import { kalemBirimFiyat, tl, type GecmisSiparis } from "@/lib/tipler";
+import { kalemBirimFiyat, tl, type GecmisSiparis, type MusteriOzet } from "@/lib/tipler";
 
 const DURUM_ETIKET: Record<string, { etiket: string; renk: string; zemin: string }> = {
-  odeme_bekliyor: { etiket: "Ödeme bekliyor", renk: "#9a5b13", zemin: "#fbeeda" },
+  odeme_bekliyor: { etiket: "Ödeme bekliyor", renk: "#9a5b13", zemin: "#fbeeda" }, // tarihi kayıtlar
   bekliyor: { etiket: "Mutfakta sırada", renk: "#6d5b49", zemin: "#f0ebe4" },
   hazirlaniyor: { etiket: "Hazırlanıyor", renk: "#31639c", zemin: "#e9f0f9" },
   hazir: { etiket: "Hazır ✓", renk: "#2f7a4c", zemin: "#e6f3ea" },
@@ -28,16 +28,13 @@ const DURUM_ETIKET: Record<string, { etiket: string; renk: string; zemin: string
   reddedildi: { etiket: "Reddedildi", renk: "#a63b2a", zemin: "#fbe7e4" },
 };
 
-// Sepetim: sepet + masa okutma + siparişi gönder + ödeme adımı + sipariş takibi.
-// Ödeme: kayıtlı kartla online ödeme PSP anlaşması yapılınca aktifleşecek;
-// o zamana dek sipariş "önce ödeme" akışıyla kasada ödenir.
+// Sepetim: sepet + puan kullanma + siparişi gönder + sipariş takibi.
+// Sipariş doğrudan mutfağa düşer (ödeme kapısı yok); 10 puan = 1 TL indirim.
 export default function SepetimEkrani() {
   const router = useRouter();
   const {
-    oturum,
     seciliKafe,
     sepet,
-    masaBirak,
     sepetGuncelle,
     sepetCikar,
     siparisVer,
@@ -48,12 +45,29 @@ export default function SepetimEkrani() {
   const [gonderiliyor, setGonderiliyor] = useState(false);
   const [siparisler, setSiparisler] = useState<GecmisSiparis[]>([]);
   const [yenileniyor, setYenileniyor] = useState(false);
+  const [bakiye, setBakiye] = useState(0);
+  const [puanKullan, setPuanKullan] = useState(0);
 
   const sepetToplam = sepet.reduce((t, k) => t + kalemBirimFiyat(k) * k.adet, 0);
+  // Kullanılabilir üst sınır: bakiye VE sipariş tutarı (10'un katına yuvarlı)
+  const puanUstSinir = Math.min(
+    Math.floor(bakiye / 10) * 10,
+    Math.floor(sepetToplam) * 10 >= 10 ? Math.floor((sepetToplam * 10) / 10) * 10 : 0
+  );
+  const puanAktif = Math.min(puanKullan, puanUstSinir);
+  const indirim = puanAktif / 10;
+  const odenecek = Math.max(0, sepetToplam - indirim);
 
   const yukle = useCallback(async () => {
-    const { data, error } = await supabase.rpc("musteri_siparislerim");
-    if (!error) setSiparisler((data as GecmisSiparis[]) ?? []);
+    const [sp, oz] = await Promise.all([
+      supabase.rpc("musteri_siparislerim"),
+      supabase.rpc("musteri_ozet"),
+    ]);
+    if (!sp.error) setSiparisler((sp.data as GecmisSiparis[]) ?? []);
+    if (!oz.error && oz.data) {
+      const o = oz.data as MusteriOzet;
+      setBakiye(o.puan_bakiye ?? o.hesaplar?.reduce((t, h) => t + h.puan_bakiye, 0) ?? 0);
+    }
   }, []);
 
   useFocusEffect(
@@ -88,33 +102,24 @@ export default function SepetimEkrani() {
     setYenileniyor(false);
   }
 
-  // Masa seçimi: Kafeler sekmesindeki bölümlü masa haritasına götürür
-  function masaSecimeGit() {
-    router.push("/kafeler");
-  }
-
-  // Self-servis kafede masa şartı yok; masalı kafede oturum gerekir
-  const selfServis = !!seciliKafe && !seciliKafe.masa_duzeni;
-
   async function gonder() {
     if (gonderiliyor || !sepet.length) return;
-    if (!selfServis && !oturum) {
-      masaSecimeGit();
+    if (!seciliKafe) {
+      router.push("/kafeler");
       return;
     }
     setGonderiliyor(true);
-    const hata = await siparisVer(not);
+    const hata = await siparisVer(not, puanAktif);
     setGonderiliyor(false);
     if (hata) {
       Alert.alert("Sipariş gönderilemedi", hata);
       return;
     }
     setNot("");
+    setPuanKullan(0);
     Alert.alert(
       "Sipariş alındı ✓",
-      selfServis
-        ? "Ödemeni kasada yaptığında hazırlanmaya başlar; hazır olunca numaranla tezgahtan alırsın."
-        : "Ödemeni kasada yaptığında hazırlanmaya başlar. Aşağıdan takip edebilirsin."
+      "Siparişin mutfağa iletildi. Hazır olunca bildirim gelir; numaranla tezgahtan alırsın."
     );
     yukle();
   }
@@ -207,43 +212,54 @@ export default function SepetimEkrani() {
               style={s.notAlan}
             />
 
-            {/* Masa durumu — yalnız masalı kafede (self-serviste tezgah teslimi) */}
-            <View style={s.masaKutu}>
-              {selfServis ? (
-                <Text style={s.masaYazi}>
-                  Self-servis — siparişin hazır olunca{" "}
-                  <Text style={{ color: renk.marka }}>numaranla tezgahtan</Text> alırsın.
-                </Text>
-              ) : oturum ? (
-                <>
-                  <Text style={s.masaYazi}>
-                    Masa: <Text style={{ color: renk.marka }}>{oturum.masa_ad}</Text>
+            {/* ── Puan kullan (10 puan = 1 TL) ── */}
+            {puanUstSinir >= 10 && (
+              <View style={s.puanKutu}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.puanBaslik}>Puan kullan</Text>
+                  <Text style={s.puanAlt}>
+                    Bakiyen: {bakiye} puan · 10 puan = 1 ₺
                   </Text>
-                  <Pressable onPress={() => { masaBirak(); masaSecimeGit(); }}>
-                    <Text style={s.masaDegistir}>Değiştir</Text>
+                  {puanAktif > 0 && (
+                    <Text style={s.puanIndirim}>
+                      −{puanAktif} puan = −{tl(indirim)}
+                    </Text>
+                  )}
+                </View>
+                <View style={s.adetKutu}>
+                  <Pressable
+                    onPress={() => setPuanKullan(Math.max(0, puanAktif - 10))}
+                    style={s.adetBtn}
+                  >
+                    <Text style={s.adetBtnYazi}>−</Text>
                   </Pressable>
-                </>
-              ) : (
-                <>
-                  <Text style={s.masaYazi}>Sipariş için masa seçmelisin</Text>
-                  <Pressable onPress={masaSecimeGit}>
-                    <LinearGradient
-                      colors={["#c86f2c", "#8a4b1f"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={s.masaBtn}
-                    >
-                      <Text style={s.masaBtnYazi}>Masa Seç</Text>
-                    </LinearGradient>
+                  <Text style={[s.adet, { minWidth: 34 }]}>{puanAktif}</Text>
+                  <Pressable
+                    onPress={() => setPuanKullan(Math.min(puanUstSinir, puanAktif + 10))}
+                    style={s.adetBtn}
+                  >
+                    <Text style={s.adetBtnYazi}>+</Text>
                   </Pressable>
-                </>
-              )}
-            </View>
+                </View>
+              </View>
+            )}
 
             <View style={s.toplamSatir}>
               <Text style={s.toplamYazi}>Toplam</Text>
               <Text style={s.toplam}>{tl(sepetToplam)}</Text>
             </View>
+            {puanAktif > 0 && (
+              <>
+                <View style={s.araSatir}>
+                  <Text style={s.araYazi}>Puan indirimi</Text>
+                  <Text style={s.araIndirim}>−{tl(indirim)}</Text>
+                </View>
+                <View style={s.araSatir}>
+                  <Text style={s.toplamYazi}>Ödenecek</Text>
+                  <Text style={s.toplam}>{tl(odenecek)}</Text>
+                </View>
+              </>
+            )}
             <Pressable onPress={gonder} disabled={gonderiliyor}>
               <LinearGradient
                 colors={["#c86f2c", "#8a4b1f"]}
@@ -252,26 +268,14 @@ export default function SepetimEkrani() {
                 style={[s.gonderBtn, gonderiliyor && s.soluk]}
               >
                 <Text style={s.gonderYazi}>
-                  {gonderiliyor
-                    ? "Gönderiliyor…"
-                    : selfServis || oturum
-                      ? `Siparişi Gönder · ${tl(sepetToplam)}`
-                      : "Masa Seç ve Sipariş Ver"}
+                  {gonderiliyor ? "Gönderiliyor…" : `Siparişi Gönder · ${tl(odenecek)}`}
                 </Text>
               </LinearGradient>
             </Pressable>
-
-            {/* Ödeme bilgisi */}
-            <View style={s.odemeKutu}>
-              <Pressable disabled style={s.kartBtn}>
-                <Ikon ad="kart" boyut={15} renk={renk.metinOrta} />
-                <Text style={s.kartBtnYazi}>Kayıtlı kartla öde — çok yakında</Text>
-              </Pressable>
-              <Text style={s.odemeNot}>
-                Online ödeme açılana kadar ödemeni kasada yapabilirsin; siparişin
-                kasa onayıyla hazırlanmaya başlar.
-              </Text>
-            </View>
+            <Text style={s.teslimNot}>
+              Siparişin doğrudan mutfağa iletilir; hazır olunca bildirim gelir,
+              numaranla tezgahtan alırsın.
+            </Text>
           </>
         )}
 
@@ -342,8 +346,8 @@ function SiparisKart({
         <Text style={s.spToplamYazi}>Toplam</Text>
         <Text style={s.spToplam}>{tl(toplam)}</Text>
       </View>
-      {sp.durum === "odeme_bekliyor" && (
-        <Text style={s.spOdemeNot}>Ödemeni kasada yapınca hazırlanmaya başlar.</Text>
+      {sp.durum === "hazir" && (
+        <Text style={s.spHazirNot}>Siparişin hazır — numaranla tezgahtan alabilirsin.</Text>
       )}
       {tekrar && (
         <Pressable onPress={tekrar} style={s.tekrarBtn}>
@@ -407,28 +411,25 @@ const s = StyleSheet.create({
     color: renk.metin,
     textAlignVertical: "top",
   },
-  masaKutu: {
+  puanKutu: {
     marginTop: 10,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 10,
     backgroundColor: renk.kart,
     borderRadius: 13,
     borderWidth: 1,
-    borderColor: renk.cizgiKoyu,
+    borderColor: "#e8b57f",
     paddingHorizontal: 14,
     paddingVertical: 11,
   },
-  masaYazi: { fontSize: 13.5, fontWeight: "700", color: renk.metin },
-  masaDegistir: { fontSize: 12.5, fontWeight: "700", color: renk.marka },
-  masaBtn: {
-    backgroundColor: renk.marka,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  masaBtnYazi: { color: "#fff", fontSize: 12.5, fontWeight: "800" },
+  puanBaslik: { fontSize: 13.5, fontWeight: "800", color: renk.metinBaslik },
+  puanAlt: { marginTop: 1, fontSize: 11.5, fontWeight: "600", color: renk.metinSoluk },
+  puanIndirim: { marginTop: 2, fontSize: 12.5, fontWeight: "800", color: renk.basari },
   toplamSatir: { flexDirection: "row", justifyContent: "space-between", marginTop: 14 },
+  araSatir: { flexDirection: "row", justifyContent: "space-between", marginTop: 4 },
+  araYazi: { fontSize: 13.5, fontWeight: "700", color: renk.metinSoluk },
+  araIndirim: { fontSize: 14.5, fontWeight: "800", color: renk.basari },
   toplamYazi: { fontSize: 14.5, fontWeight: "700", color: renk.metinOrta },
   toplam: { fontSize: 18, fontWeight: "800", color: renk.metinBaslik },
   gonderBtn: {
@@ -440,20 +441,7 @@ const s = StyleSheet.create({
   },
   soluk: { opacity: 0.5 },
   gonderYazi: { color: "#fff", fontSize: 15.5, fontWeight: "800" },
-  odemeKutu: { marginTop: 12 },
-  kartBtn: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 7,
-    borderRadius: 13,
-    borderWidth: 1.5,
-    borderColor: renk.cizgiKoyu,
-    paddingVertical: 12,
-    alignItems: "center",
-    opacity: 0.55,
-  },
-  kartBtnYazi: { fontSize: 13.5, fontWeight: "800", color: renk.metinOrta },
-  odemeNot: { marginTop: 8, fontSize: 12, lineHeight: 17, color: renk.metinSoluk, textAlign: "center" },
+  teslimNot: { marginTop: 8, fontSize: 12, lineHeight: 17, color: renk.metinSoluk, textAlign: "center" },
   bolum: {
     marginTop: 24,
     marginBottom: 8,
@@ -490,7 +478,7 @@ const s = StyleSheet.create({
   },
   spToplamYazi: { fontSize: 13.5, fontWeight: "800", color: renk.metinBaslik },
   spToplam: { fontSize: 14.5, fontWeight: "800", color: renk.marka },
-  spOdemeNot: { marginTop: 8, fontSize: 12, color: "#9a5b13" },
+  spHazirNot: { marginTop: 8, fontSize: 12, fontWeight: "700", color: "#2f7a4c" },
   tekrarBtn: {
     marginTop: 10,
     borderRadius: 11,

@@ -4,7 +4,6 @@ import { useCallback, useState } from "react";
 import { Ikon } from "@/components/Ikon";
 import {
   Image,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -12,7 +11,6 @@ import {
   Text,
   View,
 } from "react-native";
-import QRCode from "react-native-qrcode-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSepet, type Kafe } from "@/lib/sepet";
 import { supabase } from "@/lib/supabase";
@@ -27,24 +25,18 @@ interface KampanyaUrun {
   cafe_id: string;
 }
 
-interface Odul {
-  id: string;
-  ad: string;
-  puan_bedeli: number;
-}
-
-// Ana Sayfa: selamlama + puan kartı (kasada gösterilecek QR) + kampanyalar + ödüller
+// Ana Sayfa: selamlama + tek cüzdan puan kartı + kampanyalar + son hareketler.
+// Tek cüzdan (Faz 7): puan tüm SofraKur kafelerinde kazanılır ve harcanır;
+// 1 TL = 1 puan, 10 puan = 1 TL. Harcama sepette otomatik — QR/kod göstermek yok.
 export default function AnaSayfa() {
   const router = useRouter();
   const { kafeler, kafeSec } = useSepet();
   const [ozet, setOzet] = useState<MusteriOzet | null>(null);
   const [kampanyalar, setKampanyalar] = useState<KampanyaUrun[]>([]);
-  const [oduller, setOduller] = useState<Odul[]>([]);
-  const [qrAcik, setQrAcik] = useState(false);
   const [yenileniyor, setYenileniyor] = useState(false);
 
   const yukle = useCallback(async () => {
-    const [ozetC, kampC, odulC] = await Promise.all([
+    const [ozetC, kampC] = await Promise.all([
       supabase.rpc("musteri_ozet"),
       supabase
         .from("urun")
@@ -53,11 +45,9 @@ export default function AnaSayfa() {
         .eq("aktif", true)
         .order("sira")
         .limit(20),
-      supabase.from("odul").select("id, ad, puan_bedeli").eq("aktif", true).order("puan_bedeli"),
     ]);
     if (!ozetC.error) setOzet(ozetC.data as MusteriOzet);
     setKampanyalar((kampC.data as KampanyaUrun[]) ?? []);
-    setOduller((odulC.data as Odul[]) ?? []);
   }, []);
 
   useFocusEffect(
@@ -73,7 +63,9 @@ export default function AnaSayfa() {
   }
 
   const kafeAd = (id: string) => kafeler.find((k) => k.id === id)?.ad ?? "";
-  const toplamPuan = ozet?.hesaplar.reduce((t, h) => t + h.puan_bakiye, 0) ?? 0;
+  const toplamPuan =
+    ozet?.puan_bakiye ?? ozet?.hesaplar?.reduce((t, h) => t + h.puan_bakiye, 0) ?? 0;
+  const tlKarsiligi = ozet?.tl_karsiligi ?? toplamPuan / 10;
 
   // Kampanyaya dokununca o kafenin menüsü açılır
   function kampanyaAc(k: KampanyaUrun) {
@@ -92,26 +84,28 @@ export default function AnaSayfa() {
       >
         <Text style={s.selam}>Merhaba{ozet?.ad ? `, ${ozet.ad.split(" ")[0]}` : ""}</Text>
 
-        {/* Puan kartı */}
-        <Pressable onPress={() => setQrAcik(true)}>
-          <LinearGradient
-            colors={["#c86f2c", "#8a4b1f"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={s.puanKart}
-          >
+        {/* Tek cüzdan puan kartı */}
+        <LinearGradient
+          colors={["#c86f2c", "#8a4b1f"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.puanKart}
+        >
           <View style={{ flex: 1 }}>
             <Text style={s.puanEtiket}>PUANIN</Text>
             <Text style={s.puan}>{toplamPuan}</Text>
-            <Text style={s.puanAlt}>Kasada göstermek için dokun</Text>
+            <Text style={s.puanAlt}>= {tl(tlKarsiligi)} indirim değeri</Text>
           </View>
-          {ozet?.musteri_kod ? (
-            <View style={s.miniQr}>
-              <QRCode value={ozet.musteri_kod} size={64} />
-            </View>
-          ) : null}
-          </LinearGradient>
-        </Pressable>
+          <View style={s.kuralKutu}>
+            <Text style={s.kuralYazi}>1 ₺ = 1 puan</Text>
+            <Text style={s.kuralYazi}>10 puan = 1 ₺</Text>
+            <Text style={s.kuralAlt}>tüm kafelerde geçer</Text>
+          </View>
+        </LinearGradient>
+        <Text style={s.puanIpucu}>
+          Puanlar siparişin teslim edilince kendiliğinden birikir; sepette
+          &quot;Puan kullan&quot; ile indirime dönüşür.
+        </Text>
 
         {/* Kampanyalar */}
         <View style={s.bolumSatir}>
@@ -154,23 +148,6 @@ export default function AnaSayfa() {
           </ScrollView>
         )}
 
-        {/* Ödüller */}
-        {oduller.length > 0 && (
-          <>
-            <View style={s.bolumSatir}>
-              <Ikon ad="hediye" boyut={17} />
-              <Text style={s.bolum}>Ödüller</Text>
-            </View>
-            {oduller.map((o) => (
-              <View key={o.id} style={s.odul}>
-                <Text style={s.odulAd}>{o.ad}</Text>
-                <Text style={s.odulBedel}>{o.puan_bedeli} puan</Text>
-              </View>
-            ))}
-            <Text style={s.bos}>Ödül almak için kasada QR&apos;ını göstermen yeterli.</Text>
-          </>
-        )}
-
         {/* Son hareketler */}
         {ozet && ozet.hareketler.length > 0 && (
           <>
@@ -196,26 +173,6 @@ export default function AnaSayfa() {
           </>
         )}
       </ScrollView>
-
-      {/* Büyük QR modalı */}
-      <Modal visible={qrAcik} transparent animationType="fade" onRequestClose={() => setQrAcik(false)}>
-        <Pressable style={s.qrPerde} onPress={() => setQrAcik(false)}>
-          <View style={s.qrKutu}>
-            <Text style={s.qrBaslik}>Kasada bu kodu göster</Text>
-            {ozet?.musteri_kod ? (
-              <>
-                <View style={s.qrCerceve}>
-                  <QRCode value={ozet.musteri_kod} size={200} />
-                </View>
-                <Text style={s.qrKod}>{ozet.musteri_kod}</Text>
-              </>
-            ) : (
-              <Text style={s.bos}>Yükleniyor…</Text>
-            )}
-            <Text style={s.qrAlt}>Ödeme sırasında okutulur, puanın otomatik işlenir.</Text>
-          </View>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -236,7 +193,17 @@ const s = StyleSheet.create({
   puanEtiket: { color: "rgba(255,255,255,0.75)", fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   puan: { color: "#fff", fontSize: 34, fontWeight: "800", marginTop: 2 },
   puanAlt: { color: "rgba(255,255,255,0.85)", fontSize: 12.5, fontWeight: "600", marginTop: 4 },
-  miniQr: { backgroundColor: "#fff", borderRadius: 12, padding: 8 },
+  kuralKutu: {
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: "center",
+    gap: 2,
+  },
+  kuralYazi: { color: "#fff", fontSize: 13, fontWeight: "800" },
+  kuralAlt: { color: "rgba(255,255,255,0.75)", fontSize: 10.5, fontWeight: "600", marginTop: 2 },
+  puanIpucu: { marginTop: 8, fontSize: 12, lineHeight: 17, color: renk.metinSoluk },
   bolum: { fontSize: 16, fontWeight: "800", color: renk.metinBaslik },
   hareketBaslik: {
     marginTop: 22,
@@ -260,20 +227,6 @@ const s = StyleSheet.create({
   kampAd: { fontSize: 13.5, fontWeight: "700", color: renk.metinBaslik },
   kampKafe: { marginTop: 1, fontSize: 11.5, color: renk.metinSoluk },
   kampFiyat: { marginTop: 3, fontSize: 13.5, fontWeight: "800", color: renk.markaKoyu },
-  odul: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: renk.kart,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: renk.cizgi,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 8,
-  },
-  odulAd: { fontSize: 14.5, fontWeight: "700", color: renk.metinBaslik },
-  odulBedel: { fontSize: 14, fontWeight: "800", color: renk.marka },
   hareket: {
     flexDirection: "row",
     alignItems: "center",
@@ -285,29 +238,4 @@ const s = StyleSheet.create({
   hareketAciklama: { fontSize: 12, color: renk.metinSoluk, marginTop: 1 },
   hareketPuan: { fontSize: 15, fontWeight: "800", color: renk.basari },
   eksiPuan: { color: renk.tehlike },
-  qrPerde: {
-    flex: 1,
-    backgroundColor: "rgba(43,28,16,0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 28,
-  },
-  qrKutu: {
-    width: "100%",
-    maxWidth: 320,
-    backgroundColor: renk.kart,
-    borderRadius: 24,
-    alignItems: "center",
-    padding: 24,
-  },
-  qrBaslik: { fontSize: 15, fontWeight: "800", color: renk.metinBaslik },
-  qrCerceve: { marginTop: 16, backgroundColor: "#fff", borderRadius: 14, padding: 12 },
-  qrKod: {
-    marginTop: 12,
-    fontSize: 24,
-    fontWeight: "800",
-    letterSpacing: 4,
-    color: renk.marka,
-  },
-  qrAlt: { marginTop: 8, fontSize: 12.5, color: renk.metinSoluk, textAlign: "center" },
 });

@@ -16,20 +16,6 @@ export type KullaniciRol =
   | "franchise"
   | "super_admin";
 
-// Kasa hesabı yetki anahtarları (null/eksik = izinli — geriye uyumlu)
-export type YetkiKodu =
-  | "siparis"
-  | "gunsonu"
-  | "tedarikci"
-  | "gecmis"
-  | "odul";
-
-export function yetkiVar(k: Kullanici | null, kod: YetkiKodu): boolean {
-  if (!k) return false;
-  if (k.rol !== "kasa") return true; // admin (ve maskeli admin) her zaman izinli
-  return k.yetkiler?.[kod] !== false;
-}
-
 export interface Opsiyon {
   id: string;
   ad: string;

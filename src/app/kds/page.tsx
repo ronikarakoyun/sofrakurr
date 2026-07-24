@@ -34,12 +34,15 @@ function kalemOpsiyonStr(k: SiparisKalemi): string {
 }
 
 export default function KdsPage() {
-  const { kullanici, yukleniyor } = useKullanici(["admin", "mutfak"]);
+  // kasa ekranı emekli edildi: tezgah (kasa) personeli de KDS'e girer
+  const { kullanici, yukleniyor } = useKullanici(["admin", "mutfak", "kasa"]);
   const [istasyon, setIstasyon] = useState<string>("tumu");
   const [otoYazdir, setOtoYazdir] = useState(false);
   const [fisKuyrugu, setFisKuyrugu] = useState<FisVerisi[]>([]);
   const [kalemSorusu, setKalemSorusu] = useState<string | null>(null);
   const [reddetSorusu, setReddetSorusu] = useState<string | null>(null);
+  const [iptalSorusu, setIptalSorusu] = useState<string | null>(null);
+  const [bildirimDurum, setBildirimDurum] = useState<"yok" | "acik" | "kapali">("yok");
   const [saat, setSaat] = useState("");
   const gorulenler = useRef<Set<string> | null>(null);
   const yazdiriliyor = useRef(false);
@@ -68,6 +71,43 @@ export default function KdsPage() {
       return !o;
     });
   }
+
+  // Yeni sipariş web-push aboneliği (kasa ekranından taşındı): ekran kapalıyken
+  // de "yeni sipariş" bildirimi gelsin diye cihaz push_abonelik'e kaydolur.
+  async function bildirimAc() {
+    try {
+      const izin = await Notification.requestPermission();
+      if (izin !== "granted") {
+        setBildirimDurum("kapali");
+        return;
+      }
+      const kayit = await navigator.serviceWorker.register("/sw.js");
+      const abonelik = await kayit.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+      });
+      const j = abonelik.toJSON();
+      const supabase = createClient();
+      await supabase.from("push_abonelik").upsert(
+        {
+          cafe_id: kullanici!.cafe_id,
+          kullanici_id: kullanici!.id,
+          endpoint: j.endpoint!,
+          p256dh: j.keys!.p256dh,
+          auth: j.keys!.auth,
+        },
+        { onConflict: "endpoint" }
+      );
+      setBildirimDurum("acik");
+    } catch {
+      setBildirimDurum("kapali");
+    }
+  }
+
+  useEffect(() => {
+    if (kullanici) bildirimAc();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kullanici]);
 
   // Bir siparişin bu istasyonu ilgilendiren kalemleri
   function kendiKalemleri(s: Siparis): SiparisKalemi[] {
@@ -202,6 +242,16 @@ export default function KdsPage() {
     yenile();
   }
 
+  // Müşteri vazgeçti / sorun çözme: sipariş iptal edilir (stok ve puan
+  // iadelerini DB trigger'ları üstlenir, boş kalan adisyon kendiliğinden kapanır)
+  async function siparisIptal(s: Siparis) {
+    const supabase = createClient();
+    const { error } = await supabase.from("siparis").update({ durum: "iptal" }).eq("id", s.id);
+    if (error) alert("Sipariş iptal edilemedi: " + error.message);
+    setIptalSorusu(null);
+    yenile();
+  }
+
   if (yukleniyor) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-kds-zemin">
@@ -284,6 +334,16 @@ export default function KdsPage() {
             }
           >
             🖨 oto {otoYazdir ? "açık" : "kapalı"}
+          </button>
+          <button
+            onClick={bildirimAc}
+            title={bildirimDurum === "acik" ? "Bildirimler açık" : "Bildirimleri aç"}
+            className={
+              "rounded-full border border-kds-cizgi px-3 py-1.5 text-[13px] font-bold " +
+              (bildirimDurum === "acik" ? "bg-kds-rozet text-kds-metin" : "bg-kds-kart text-kds-soluk")
+            }
+          >
+            {bildirimDurum === "acik" ? "🔔" : "🔕"}
           </button>
           <span className="ml-1.5 text-sm font-bold tabular-nums text-kds-soluk">{saat}</span>
           <CikisButonu />
@@ -449,6 +509,26 @@ export default function KdsPage() {
                       </button>
                     </div>
                   )}
+
+                  {iptalSorusu === s.id && (
+                    <div className="mt-0.5 flex max-w-[480px] items-center gap-2.5 rounded-xl bg-kds-kirmizi-kutu px-3 py-2.5">
+                      <span className="flex-1 text-[13px] font-bold text-[#d98a76]">
+                        Sipariş iptal edilsin mi? (müşteri vazgeçti / alınamadı)
+                      </span>
+                      <button
+                        onClick={() => setIptalSorusu(null)}
+                        className="px-2 py-1.5 text-[13px] font-bold text-kds-soluk"
+                      >
+                        Vazgeç
+                      </button>
+                      <button
+                        onClick={() => siparisIptal(s)}
+                        className="rounded-[9px] bg-tehlike px-3.5 py-2 text-[13px] font-extrabold text-white"
+                      >
+                        Evet, iptal et
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Sağ: aksiyonlar */}
@@ -471,10 +551,23 @@ export default function KdsPage() {
                       onClick={() => {
                         setReddetSorusu(s.id);
                         setKalemSorusu(null);
+                        setIptalSorusu(null);
                       }}
                       className="rounded-[10px] px-2.5 py-2 text-[13.5px] font-bold text-[#d98a76] hover:bg-kds-kirmizi-kutu"
                     >
                       Reddet
+                    </button>
+                  )}
+                  {["bekliyor", "hazirlaniyor"].includes(s.durum) && iptalSorusu !== s.id && (
+                    <button
+                      onClick={() => {
+                        setIptalSorusu(s.id);
+                        setReddetSorusu(null);
+                        setKalemSorusu(null);
+                      }}
+                      className="rounded-[10px] px-2.5 py-2 text-[13.5px] font-bold text-kds-soluk hover:bg-kds-kirmizi-kutu"
+                    >
+                      İptal
                     </button>
                   )}
                 </div>

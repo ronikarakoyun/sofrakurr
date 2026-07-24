@@ -64,13 +64,31 @@ export async function POST(req: Request) {
     return NextResponse.json({ hata: "Bu kampanya zaten gönderilmiş" }, { status: 409 });
   }
 
-  // Hedef kitle: zincir kampanyasında zincirin tüm sadakat üyeleri,
-  // kafe kampanyasında yalnız o kafenin üyeleri
-  const sorgu = s.from("sadakat_hesabi").select("kullanici_id");
-  const { data: hesaplar } = zincirKampanyasi
-    ? await sorgu.eq("zincir_id", kampanya.zincir_id)
-    : await sorgu.eq("cafe_id", yetki.cafeId);
-  const uyeIdleri = [...new Set((hesaplar ?? []).map((h) => h.kullanici_id))];
+  // Hedef kitle: tek cüzdan modelinde (0059) üyelik puan DEFTERİNDEN okunur —
+  // bu kafede (zincir kampanyasında zincirin herhangi bir kafesinde) puan
+  // hareketi olan müşteriler.
+  let kafeIdleri: string[] = [yetki.cafeId];
+  if (zincirKampanyasi) {
+    const { data: kafeler } = await s
+      .from("cafe")
+      .select("id")
+      .eq("zincir_id", kampanya.zincir_id);
+    kafeIdleri = (kafeler ?? []).map((k) => k.id);
+  }
+  const { data: hareketler } = await s
+    .from("puan_hareketi")
+    .select("sadakat_hesabi_id")
+    .in("cafe_id", kafeIdleri);
+  const hesapIdleri = [...new Set((hareketler ?? []).map((h) => h.sadakat_hesabi_id))];
+
+  let uyeIdleri: string[] = [];
+  if (hesapIdleri.length) {
+    const { data: hesaplar } = await s
+      .from("sadakat_hesabi")
+      .select("kullanici_id")
+      .in("id", hesapIdleri);
+    uyeIdleri = [...new Set((hesaplar ?? []).map((h) => h.kullanici_id))];
+  }
 
   let tokenlar: { token: string }[] = [];
   if (uyeIdleri.length) {

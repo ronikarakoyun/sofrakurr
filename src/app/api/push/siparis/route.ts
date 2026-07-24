@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import webpush from "web-push";
 import { createClient as createServisClient } from "@supabase/supabase-js";
+import { webhookGecerli } from "@/lib/webhookGuard";
 
 // Veritabanı tetikleyicisinden gelir (0020): QR'dan yeni müşteri siparişi
 // düştüğünde kafenin tüm push abonelerine "onay bekliyor" bildirimi basar.
 // Kimlik: paylaşılan gizli başlık (WEBHOOK_SECRET) — tarayıcıdan çağrılamaz.
 
 export async function POST(req: Request) {
-  const gizli = process.env.WEBHOOK_SECRET;
-  if (!gizli || req.headers.get("x-webhook-secret") !== gizli) {
+  if (!webhookGecerli(req)) {
     return NextResponse.json({ hata: "yetkisiz" }, { status: 401 });
   }
   const anahtar = process.env.SUPABASE_SECRET;

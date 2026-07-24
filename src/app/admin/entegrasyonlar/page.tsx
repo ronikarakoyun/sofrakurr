@@ -50,8 +50,6 @@ export default function EntegrasyonlarPage() {
   const [taslak, setTaslak] = useState<Record<string, { satici_no: string; api_anahtar: string; api_secret: string }>>({});
   const [mesaj, setMesaj] = useState<{ metin: string; hata: boolean } | null>(null);
   const [meskul, setMeskul] = useState<string | null>(null);
-  const [okc, setOkc] = useState<{ tanimli: boolean; son4: string }>({ tanimli: false, son4: "" });
-  const [yeniOkcAnahtar, setYeniOkcAnahtar] = useState<string | null>(null);
 
   const yukle = useCallback(async () => {
     if (!kullanici) return;
@@ -62,17 +60,7 @@ export default function EntegrasyonlarPage() {
     const harita: Record<string, Ozet> = {};
     (data as Ozet[] | null)?.forEach((o) => (harita[o.platform] = o));
     setOzetler(harita);
-    const { data: okcD } = await supabase.rpc("okc_durum");
-    if (okcD?.[0]) setOkc({ tanimli: okcD[0].tanimli, son4: okcD[0].son4 });
   }, [kullanici, supabase]);
-
-  async function okcAnahtarUret() {
-    if (!confirm("Yeni yazarkasa anahtarı üretilsin mi? Eskisi (varsa) geçersiz olur.")) return;
-    const { data, error } = await supabase.rpc("okc_anahtar_uret");
-    if (error) return bilgi("Anahtar üretilemedi: " + error.message, true);
-    setYeniOkcAnahtar(data as string);
-    yukle();
-  }
 
   useEffect(() => {
     if (kullanici) yukle();
@@ -225,68 +213,6 @@ export default function EntegrasyonlarPage() {
         Boş bıraktığınız alan mevcut değeri korur — yalnız değiştirmek istediğinizi doldurun.
         Anahtarlar şifreli saklanır ve yalnızca bu kafenin yöneticisi erişebilir.
       </p>
-
-      {/* ── Yazarkasa (ÖKC) bağlantısı ── */}
-      <h2 className="mt-9 font-serif text-xl font-semibold text-metin-baslik">
-        Yazarkasa (ÖKC) Bağlantısı
-      </h2>
-      <p className="mt-1 text-sm text-metin-soluk">
-        Yazarkasa POS&apos;unuzdan açık hesapları seçip tahsilat alabilmeniz için. Aşağıdaki
-        anahtarı ve adresleri cihazınızın (ya da entegratörünüzün) ayarına girin.
-      </p>
-
-      <div className="mt-3 rounded-2xl border border-cizgi bg-kart p-4">
-        <div className="flex items-center gap-2.5">
-          <span className="text-[15.5px] font-extrabold text-metin-baslik">Bağlantı Anahtarı</span>
-          {okc.tanimli ? (
-            <span className="rounded-full bg-basari-zemin px-2.5 py-0.5 text-[11px] font-extrabold text-basari">
-              tanımlı ····{okc.son4}
-            </span>
-          ) : (
-            <span className="rounded-full bg-krem-koyu px-2.5 py-0.5 text-[11px] font-extrabold text-metin-soluk">
-              tanımsız
-            </span>
-          )}
-          <span className="flex-1" />
-          <button
-            onClick={okcAnahtarUret}
-            className="rounded-xl border border-cizgi-koyu bg-kart px-3.5 py-2 text-[13px] font-extrabold text-metin-orta"
-          >
-            {okc.tanimli ? "Yeni Anahtar Üret" : "Anahtar Üret"}
-          </button>
-        </div>
-
-        {yeniOkcAnahtar && (
-          <div className="mt-3 rounded-xl bg-basari-zemin px-3.5 py-3">
-            <p className="text-[12.5px] font-bold text-basari">
-              Yeni anahtarınız (bir kez gösterilir — kopyalayıp cihaza girin):
-            </p>
-            <code className="mt-1.5 block break-all rounded-lg bg-white px-3 py-2 text-[13px] font-bold text-metin-baslik">
-              {yeniOkcAnahtar}
-            </code>
-          </div>
-        )}
-
-        <div className="mt-3 flex flex-col gap-1.5 text-[12.5px] text-metin-soluk">
-          <div>
-            <span className="font-bold text-metin-orta">Açık hesaplar adresi:</span>{" "}
-            <code className="break-all">https://sofrakur.com/api/okc/hesaplar</code>
-          </div>
-          <div>
-            <span className="font-bold text-metin-orta">Ödeme bildirimi adresi:</span>{" "}
-            <code className="break-all">https://sofrakur.com/api/okc/ode</code>
-          </div>
-          <div className="text-[11.5px] text-metin-silik">
-            Kimlik doğrulama: her istekte <code>x-okc-anahtar</code> başlığında yukarıdaki anahtar.
-          </div>
-        </div>
-
-        <p className="mt-3 rounded-xl bg-uyari-zemin px-3.5 py-2.5 text-[12px] font-semibold leading-relaxed text-uyari">
-          ⓘ Bu, SofraKur tarafındaki hazır arayüzdür. Cihaz üzerindeki uygulama yazarkasa
-          markanıza (Ingenico, Beko, Hugin, Profilo…) ve mali entegratörünüze bağlıdır;
-          markanızı bize iletin, o tarafın kurulumunu birlikte planlayalım.
-        </p>
-      </div>
     </div>
   );
 }

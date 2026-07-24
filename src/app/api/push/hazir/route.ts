@@ -1,6 +1,7 @@
 import { Expo } from "expo-server-sdk";
 import { NextResponse } from "next/server";
 import { createClient as createServisClient } from "@supabase/supabase-js";
+import { webhookGecerli } from "@/lib/webhookGuard";
 
 // Veritabanı tetikleyicisinden gelir (0042): sipariş 'hazir' olunca siparişi
 // veren MÜŞTERİNİN telefonuna Expo push atar ("Siparişin hazır · #N").
@@ -9,8 +10,7 @@ import { createClient as createServisClient } from "@supabase/supabase-js";
 // (DeviceNotRegistered) silinir — api/push/kampanya'daki desen.
 
 export async function POST(req: Request) {
-  const gizli = process.env.WEBHOOK_SECRET;
-  if (!gizli || req.headers.get("x-webhook-secret") !== gizli) {
+  if (!webhookGecerli(req)) {
     return NextResponse.json({ hata: "yetkisiz" }, { status: 401 });
   }
   const anahtar = process.env.SUPABASE_SECRET;
